@@ -1,0 +1,7 @@
+<skin>
+	<!-- Switch menu pic -->
+	<switchpixmap>
+		<pixmap name="menu_on" filename="mega32/menu/menu_on.png"  />
+		<pixmap name="menu_off" filename="mega32/menu/menu_off.png" />
+	</switchpixmap>
+</skin>

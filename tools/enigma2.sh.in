@@ -1,0 +1,169 @@
+#!/bin/sh
+
+prefix=/usr
+exec_prefix=/usr
+datarootdir=${prefix}/share
+
+#check if it is Wetek
+if [ -e /proc/stb/info/boxtype ]; then
+   stbcheck=`cat /proc/stb/info/boxtype | cut -c1-6`
+   if [ $stbcheck == "wetek" ]; then
+	if [ -e /usr/bin/xbmc ]; then
+		if [ -e /etc/.xbmcstart ]; then
+			rm -f /etc/.xbmcstart
+			/usr/bin/xbmc
+		fi
+	fi
+
+	if [ -e /usr/bin/kodi ]; then
+		if [ -e /etc/.kodistart ]; then
+			rm -f /etc/.kodistart
+			/usr/bin/kodi
+		fi
+	fi
+   fi
+fi
+
+#check for /etc/enigma2 folder
+if [ ! -d /etc/enigma2 ] ; then
+	mkdir -p /etc/enigma2
+fi
+
+# workaround for corrupt ssl files
+if [ ! "$(grep config.misc.firstrun /etc/enigma2/settings)" == "config.misc.firstrun=false" ]; then
+	rm -rf /etc/enigma2/cert.pem &
+	rm -rf /etc/enigma2/key.pem &
+fi
+
+# update NTP time if NTP Time Enabled
+if [ "$(grep config.misc.SyncTimeUsing /etc/enigma2/settings)" == "config.misc.SyncTimeUsing=1" ]; then
+	/usr/sbin/ntpdate -s -u pool.ntp.org &
+fi
+
+if [ -x /usr/bin/showiframe ]; then
+	if [ -f /etc/enigma2/backdrop.mvi ]; then
+		/usr/bin/showiframe /etc/enigma2/backdrop.mvi
+	elif [ -f /usr/share/backdrop.mvi ]; then
+		/usr/bin/showiframe /usr/share/backdrop.mvi
+	fi
+fi
+
+######### Some EGAMI Scripts
+
+[ ! -e /lib/libcrypto.so.0.9.8 ] && ln -s /lib/libcrypto.so.0.9.7 /lib/libcrypto.so.0.9.8
+[ ! -d /picon ] && mkdir /picon && touch /picon/picon.png
+[ ! -d /usr/tuxbox/config  ] && mkdir -p /usr/tuxbox/config
+[ ! -e /usr/bin/egami_modules.sh ] && touch /usr/bin/egami_modules.sh && chmod 755 /usr/bin/egami_modules.sh
+[ -e /usr/bin/egami_modules.sh ] && /usr/bin/egami_modules.sh
+[ -e /bin/emud ] && /bin/emud &
+
+tar xzf /etc/var.tar.gz -C /
+
+# Usage for IPTV Player
+[ -e /usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayer/hosts/hostipla_blocked_due_privacy_policy.py ] && mv /usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayer/hosts/hostipla_blocked_due_privacy_policy.py /usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayer/hosts/hostipla.py
+[ -e /usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayer/hosts/hostipla_blocked_due_privacy_policy.pyo ] && mv /usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayer/hosts/hostipla_blocked_due_privacy_policy.pyo /usr/lib/enigma2/python/Plugins/Extensions/IPTVPlayer/hosts/hostipla.pyo
+
+######### END OF EGAMI Scripts
+
+
+# hook to execute scripts always before enigma2 start
+if [ -x /usr/bin/enigma2_pre_start.sh ]; then
+	/usr/bin/enigma2_pre_start.sh
+fi
+
+if [ -d /home/root ]; then
+	export HOME=/home/root
+	cd
+fi
+
+#check for sundtek tuner helper lib
+if [ -e /opt/lib/libmediaclient.so ]; then
+	LIBS="/opt/lib/libmediaclient.so /usr/lib/libopen.so.0.0.0"
+else
+	LIBS="/usr/lib/libopen.so.0.0.0"
+fi
+
+#check for specific pagecache helper lib
+if [ -e /usr/lib/libpagecache.so ]; then
+	LIBS="$LIBS /usr/lib/libpagecache.so"
+fi
+
+#check for receiver specific passthrough helper lib
+if [ -e /usr/lib/libpassthrough.so ]; then
+	LIBS="$LIBS /usr/lib/libpassthrough.so"
+fi
+
+if [ ! -e /etc/enigma2/settings ]; then
+	touch /etc/enigma2/settings
+fi
+
+sync
+
+# in case sysctl.conf is not properly loaded - load sysctl.conf here again...
+sysctl -p
+
+# This is a BAD idea - not restarting enigma2 when it's leaking memory results in unusable system.
+(sleep 2; echo "enigma2 is the main pvr application... adjust oom score!"; PID=$(pidof enigma2); \
+        [ -e /proc/$PID/oom_score_adj ] && echo "-999" > /proc/$PID/oom_score_adj || echo "-17" > /proc/$PID/oom_adj;) &
+
+if [ "$(grep config.crash.enabledebug /etc/enigma2/settings)" == "config.crash.enabledebug=true" ]; then
+	if [ "$(grep config.crash.debug_path= /etc/enigma2/settings | sed 's/config.crash.debug_path=//g')" != "" -a -d "$(grep config.crash.debug_path= /etc/enigma2/settings | sed 's/config.crash.debug_path=//g')" ]; then
+		LD_PRELOAD=$LIBS /usr/bin/enigma2 &> $(grep config.crash.debug_path= /etc/enigma2/settings | sed 's/config.crash.debug_path=//g')Enigma2-$(date +%Y-%m-%d_%H-%M-%S).log
+	else
+		LD_PRELOAD=$LIBS /usr/bin/enigma2 &> /home/root/logs/Enigma2-$(date +%Y-%m-%d_%H-%M-%S).log
+	fi
+else
+	# in case $TERM is "linux" the serial output is activated - discard debug output
+	if [ "$TERM" = linux ]; then
+		LD_PRELOAD=$LIBS /usr/bin/enigma2 2> /dev/null
+	else
+		LD_PRELOAD=$LIBS /usr/bin/enigma2
+	fi
+fi
+
+# enigma2 exit codes:
+#
+# 1 - halt
+# 2 - reboot
+# 3 - restart enigma
+#
+# >128 signal
+
+ret=$?
+case $ret in
+	1)
+		/sbin/halt
+		;;
+	2)
+		/sbin/reboot
+		;;
+	3)
+		rm -f /tmp/.listen.camd.socket.ignore
+		;;
+	4)
+		/sbin/rmmod lcd
+		/usr/sbin/fpupgrade --upgrade 2>&1 | tee /home/root/fpupgrade.log
+		sleep 1;
+		/sbin/rmmod fp
+		/sbin/modprobe fp
+		/sbin/reboot
+		;;
+	42)
+		python /usr/lib/enigma2/python/upgrade.pyo
+		;;
+	43)
+		init 1
+		;;
+	44)
+		# little hack but it will be fixed soon in drivers
+		/usr/lib/enigma2/python/Plugins/SystemPlugins/MICOMUpgrade/bin/fbclear
+		/usr/bin/showiframe /usr/lib/enigma2/python/Plugins/SystemPlugins/MICOMUpgrade/wait.mvi
+		echo fpupload >/proc/vfd && sleep 3 && dd bs=256k if=/tmp/micom.bin of=/dev/mcu
+		/usr/bin/showiframe /usr/lib/enigma2/python/Plugins/SystemPlugins/MICOMUpgrade/reboot.mvi
+		# Wait forever for the user to power off
+		while(true) ; do sleep 60 ; done
+		;;
+	*)
+		rm -f /tmp/.listen.camd.socket.ignore
+		;;
+esac
