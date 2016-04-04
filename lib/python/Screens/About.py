@@ -53,7 +53,8 @@ class About(Screen):
         AboutText += _('Cores:\t%s\n') % about.getCpuCoresString()
         AboutText += _('Version:\t%s') % EGAMIVersion + '\n'
         AboutText += _('Kernel:\t%s') % about.getKernelVersionString() + '\n'
-        AboutText += _('Oe-Core:\t%s') % about.getEnigmaVersionString() + '\n'
+        AboutText += _('Oe-Core:\tOe-Alliance 3.4') + '\n'
+        AboutText += _('Moderator:\tRedouane') + '\n'
         AboutText += _('Image Type:\t%s\n') % getImageType().title()
         AboutText += _('Skin name:\t%s\n') % config.skin.primary_skin.value[0:-9]
         string = getDriverDate()
